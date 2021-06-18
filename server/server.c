@@ -15,6 +15,11 @@
 #define DATA_BUFFER 5000
 #define MAX_CONNECTIONS 10 
 #define SUCCESS_MESSAGE "Your message delivered successfully"
+#define FAIL_AUTH_MESSAGE "Authentication fail"
+
+int sudo_mode;
+int sudo_sock;
+int is_auth;
 
 void ForkWaitFunction(char bash[], char *arg[]){
     int status;
@@ -81,6 +86,7 @@ void setGrant(char* argGrant){
     const char s[80] = " ";
 
     strcpy(setter,argGrant);
+    setter[strlen(setter)-1]='\0';
 
     /* get the first token */
     token = strtok(setter, s);
@@ -119,6 +125,7 @@ int auth(char *argAuth) {
     char *arg[DATA_BUFFER];
     const char s[80] = " ";
 
+    // argAuth[strlen(argAuth)-1]='\0';
     strcpy(setter,argAuth);
 
     /* get the first token */
@@ -160,6 +167,7 @@ void setReg(char* argReg){
     const char s[80] = " ";
 
     strcpy(setter,argReg);
+    setter[strlen(setter)-1]='\0';
 
     /* get the first token */
     token = strtok(setter, s);
@@ -174,7 +182,7 @@ void setReg(char* argReg){
     sprintf(setter,"%s,%s\n",arg[2],arg[5]);
     to("dbAkun");
     FILE*fp;
-    fp=fopen("akses.csv","a");
+    fp=fopen("akun.csv","a");
     fprintf(fp,"%s",setter);      
     fclose(fp);
     down();
@@ -236,7 +244,8 @@ void start(){
     char *dbAkun = "dbAkun";
     char *tAkun = "akun";
     char *tAkses = "akses";
-    char *sudoGrant = "GRANT PERMISSION dbAkun INTO sudo";
+    char *sudoGrant = "GRANT PERMISSION dbAkun INTO sudo;";
+    char *akunDummy = "CREATE USER jack IDENTIFIED BY jack123;";
     int check;
     createFolderDatabase(databases);
     to(databases); 
@@ -249,6 +258,8 @@ void start(){
     down();
     pwd();
     setGrant(sudoGrant);
+    setReg(akunDummy);
+
 }
 
 char param[15][50];
@@ -408,7 +419,7 @@ int main () {
     socklen_t addrlen;
     pthread_t tid[MAX_CONNECTIONS];
 
-    
+    is_auth = 0;
 
     /* Get the socket server fd */
     server_fd = create_tcp_server_socket(); 
@@ -426,18 +437,31 @@ int main () {
     while (1) {
         ret_val = epoll_wait(epfd, all_connections, MAX_CONNECTIONS, timeout_msecs /*timeout*/ );
 
+        if(is_auth == 1 || strcmp(buf,"")==0){
+            continue;
+        }else if(strcmp(buf,"0")==0){
+            sudo_mode = 1;
+            is_auth = 1;
+            sudo_sock = all_connections[i].data.fd;
+        }else{
+            is_auth = auth(buf);
+            printf("%d",is_auth);
+            if(is_auth==0){
+                ret_val = send(all_connections[i].data.fd, FAIL_AUTH_MESSAGE, sizeof(FAIL_AUTH_MESSAGE), 0);
+                close(all_connections[i].data.fd);
+            }
+        }
+
         for (int i = 0; i < ret_val; i++)
         {
             if (all_connections[i].data.fd == server_fd) { 
                 new_fd = accept(server_fd, (struct sockaddr*)&new_addr, &addrlen);
+                ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
+                // Authentikasi                
                 if (new_fd >= 0) {
                     setup_epoll_connection(epfd, new_fd, &epoll_temp);
                     printf("Accepted a new connection with  fd: %d\n", new_fd);
-                    ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
                     
-                    
-                    
-                    // Authentikasi
 
                     
                     
@@ -454,7 +478,7 @@ int main () {
                 if ( (temp_fd = all_connections[i].data.fd) < 0) continue;
 
                 ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
-
+                
                 if (ret_val > 0) {
                     create_parameter(buf);
                     sql_function();
@@ -464,6 +488,7 @@ int main () {
                     
                     if(strstr(buf,"exit")){
                         close(all_connections[i].data.fd);
+                        is_auth = 0;
                     }
                 }
             }
