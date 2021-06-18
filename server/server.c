@@ -56,7 +56,7 @@ void down(){
     chdir("..");
 }
 
-void createDatabase(char *dbname){
+void createFolderDatabase(char *dbname){
     char *database = dbname;
     int check;
     check = mkdir(database,0777);
@@ -247,10 +247,10 @@ void start(){
     char *sudoGrant = "GRANT PERMISSION dbAkun INTO sudo;";
     char *akunDummy = "CREATE USER jack IDENTIFIED BY jack123;";
     int check;
-    createDatabase(databases);
+    createFolderDatabase(databases);
     to(databases); 
     pwd();   
-    createDatabase(dbAkun);
+    createFolderDatabase(dbAkun);
     to(dbAkun);
     pwd();
     createTable(tAkun);
@@ -261,6 +261,130 @@ void start(){
     setReg(akunDummy);
 
 }
+
+char param[15][50];
+int  index_param = 0;
+
+void create_parameter(char buf[])
+{
+    char *token;
+
+    token = strtok(buf," ");
+    
+    while(token != NULL){
+        strcpy(param[index_param], token);
+        index_param++;
+        token = strtok(NULL, " ");
+    }
+}
+
+void create_database(){
+    DIR* dir = opendir(param[2]);
+
+    if(dir){
+        printf("Database %s sudah ada\n",param[2]);
+        closedir(dir);
+    }
+    else if(ENOENT == errno){
+        mkdir(param[2], 0777);
+        printf("Database %s berhasil dibuat\n", param[2]);
+    }
+    else{
+        printf("Terjadi error\n");
+    }
+}
+
+void create_csv(char *filename, char atributename[][100], char datatype[][100], int count){
+    
+    FILE *fp;
+
+    filename = strcat(filename, ".csv");
+    fp = fopen(filename, "w+");
+
+    for(int i = 4; i < count; i++){
+        if(i % 2 == 0){
+            if(i == count-2)
+                fprintf(fp,"%s", atributename[i]);
+            else
+                fprintf(fp,"%s;", atributename[i]);
+        }
+    }
+
+    fclose(fp);
+    printf("Tabel %s.csv berhasil dibuat\n",filename);
+}
+
+void create_table () {
+    // char cwd[PATH_MAX];
+    // if (getcwd(cwd, sizeof(cwd)) != NULL) {
+    //     printf("Current working dir: %s\n", cwd);
+    // } else {
+    //     perror("getcwd() error");
+    // }
+
+    if( access( param[2], F_OK ) == 0 ) {
+        printf("Tabel %s sudah ada\n",param[2]);
+    } 
+    else {
+        char atributename[index_param - 2][100];
+        char datatype[index_param - 2][100];
+
+        for(int i = 4; i < index_param ; i++){
+            char * check = strtok(param[i],",");
+
+            // if(i == 4){
+            //     strcpy(atributename[i], param[i]+1);
+            // }
+
+            if(i % 2 == 0){
+                strcpy(atributename[i], param[i]);
+                //  atributename[i] = param[i];
+            }
+            else{
+                strcpy(datatype[i], param[i]);
+            }
+
+            // if(i % 2 == 0){
+            //     printf("atribut = %s ",atributename[i]);
+            // }
+            // else printf("tipe data = %s\n",datatype[i]);  
+        }
+
+        create_csv(param[2], atributename, datatype, argc);
+    }
+}
+
+void drop_database(){
+    char dirname[50];
+
+    strcpy(dirname, databaselocation);
+    strcat(dirname, "/");
+    strcat(dirname,argv[3]);
+
+    printf("%s\n",dirname);
+
+    char *argvrmdatabase[] = {"rm", "-r", dirname, NULL};
+    ForkWaitFunction("/bin/rm",argvrmdatabase);
+
+    printf("Database %s telah dihapus\n",argv[3]);
+}
+
+void sql_function(){
+
+    if(index_param > 2){
+        if(!strcmp(param[0], "CREATE") && !strcmp(param[1],"DATABASE"))
+            create_database();
+        else if(!strcmp(param[0], "CREATE") && !strcmp(param[1],"TABLE"))
+            create_table();
+        else if(!strcmp(param[0], "DROP") && !strcmp(param[1],"DATABASE")){
+            drop_database();
+        }
+
+    }
+
+}
+
+
 
 // void *server_main_routine(void *arg){
 //     char buf[DATA_BUFFER];
@@ -341,33 +465,29 @@ int main () {
                     printf("Accepted a new connection with  fd: %d\n", new_fd);
                     
 
+                    
+                    
 
                     // Dump atau noDump
 
-                } else {
+                } 
+                
+                else {
                     fprintf(stderr, "accept failed [%s]\n", strerror(errno));
                 }
-            }else if (all_connections[i].events & EPOLLIN) {
+                
+            } else if (all_connections[i].events & EPOLLIN) {
                 if ( (temp_fd = all_connections[i].data.fd) < 0) continue;
 
                 ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
                 
                 if (ret_val > 0) {
+                    create_parameter(buf);
+                    sql_function();
                     printf("Returned fd is %d [index, i: %d]\n", all_connections[i].data.fd, i);
                     printf("Received data (len %d bytes, fd: %d): %s\n", ret_val, all_connections[i].data.fd, buf);
                     ret_val = send(all_connections[i].data.fd, SUCCESS_MESSAGE, sizeof(SUCCESS_MESSAGE), 0);
-
-                    // if(is_auth==0&&!strstr(buf,"")){
-                    //     is_auth = auth(buf);
-                    //     if(is_auth==0){
-                    //         ret_val = send(all_connections[i].data.fd, FAIL_AUTH_MESSAGE, sizeof(FAIL_AUTH_MESSAGE), 0);
-                    //         close(all_connections[i].data.fd);
-                    //     }
-                    // }
-                    if(sudo_sock==all_connections[i].data.fd && strstr(buf,"exit")){
-                        close(sudo_sock);
-                        is_auth = 0;
-                    }
+                    
                     if(strstr(buf,"exit")){
                         close(all_connections[i].data.fd);
                         is_auth = 0;
