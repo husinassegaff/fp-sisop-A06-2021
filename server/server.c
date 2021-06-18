@@ -15,6 +15,11 @@
 #define DATA_BUFFER 5000
 #define MAX_CONNECTIONS 10 
 #define SUCCESS_MESSAGE "Your message delivered successfully"
+#define FAIL_AUTH_MESSAGE "Authentication fail"
+
+int sudo_mode;
+int sudo_sock;
+int is_auth;
 
 void ForkWaitFunction(char bash[], char *arg[]){
     int status;
@@ -81,6 +86,7 @@ void setGrant(char* argGrant){
     const char s[80] = " ";
 
     strcpy(setter,argGrant);
+    setter[strlen(setter)-1]='\0';
 
     /* get the first token */
     token = strtok(setter, s);
@@ -104,7 +110,7 @@ void setGrant(char* argGrant){
     fclose(fp);
     down();
     free(token);
-    free(arg);
+    // free(arg);
     strcpy(setter,"");
 }
 
@@ -113,6 +119,29 @@ int getGrant(){
 }
 
 int auth(char *argAuth) {
+    int i = 0;
+    char setter[80];
+    char *token;
+    char *arg[DATA_BUFFER];
+    const char s[80] = " ";
+
+    // argAuth[strlen(argAuth)-1]='\0';
+    strcpy(setter,argAuth);
+
+    /* get the first token */
+    token = strtok(setter, s);
+   
+    /* walk through other tokens */
+    while( token != NULL ) {
+        arg[i]=token;
+        // printf( "%s\n", token );    
+        token = strtok(NULL, s);
+        i++;
+    } 
+    char username[80]; 
+    char password[80];
+    strcpy(username,arg[2]);
+    strcpy(password,arg[4]);
     to("dbAkun");
     FILE *fp = fopen("akun.csv", "r");
     int is_auth = 0;
@@ -138,6 +167,7 @@ void setReg(char* argReg){
     const char s[80] = " ";
 
     strcpy(setter,argReg);
+    setter[strlen(setter)-1]='\0';
 
     /* get the first token */
     token = strtok(setter, s);
@@ -152,12 +182,12 @@ void setReg(char* argReg){
     sprintf(setter,"%s,%s\n",arg[2],arg[5]);
     to("dbAkun");
     FILE*fp;
-    fp=fopen("akses.csv","a");
+    fp=fopen("akun.csv","a");
     fprintf(fp,"%s",setter);      
     fclose(fp);
     down();
     free(token);
-    free(arg);
+    // free(arg);
     strcpy(setter,"");
 }
 
@@ -214,7 +244,8 @@ void start(){
     char *dbAkun = "dbAkun";
     char *tAkun = "akun";
     char *tAkses = "akses";
-    char *sudoGrant = "GRANT PERMISSION dbAkun INTO sudo";
+    char *sudoGrant = "GRANT PERMISSION dbAkun INTO sudo;";
+    char *akunDummy = "CREATE USER jack IDENTIFIED BY jack123;";
     int check;
     createDatabase(databases);
     to(databases); 
@@ -227,6 +258,8 @@ void start(){
     down();
     pwd();
     setGrant(sudoGrant);
+    setReg(akunDummy);
+
 }
 
 // void *server_main_routine(void *arg){
@@ -264,7 +297,7 @@ int main () {
     socklen_t addrlen;
     pthread_t tid[MAX_CONNECTIONS];
 
-    
+    is_auth = 0;
 
     /* Get the socket server fd */
     server_fd = create_tcp_server_socket(); 
@@ -282,16 +315,32 @@ int main () {
     while (1) {
         ret_val = epoll_wait(epfd, all_connections, MAX_CONNECTIONS, timeout_msecs /*timeout*/ );
 
+        if(is_auth == 1 || strcmp(buf,"")==0){
+            continue;
+        }else if(strcmp(buf,"0")==0){
+            sudo_mode = 1;
+            is_auth = 1;
+            sudo_sock = all_connections[i].data.fd;
+        }else{
+            is_auth = auth(buf);
+            printf("%d",is_auth);
+            if(is_auth==0){
+                ret_val = send(all_connections[i].data.fd, FAIL_AUTH_MESSAGE, sizeof(FAIL_AUTH_MESSAGE), 0);
+                close(all_connections[i].data.fd);
+            }
+        }
+
         for (int i = 0; i < ret_val; i++)
         {
             if (all_connections[i].data.fd == server_fd) { 
                 new_fd = accept(server_fd, (struct sockaddr*)&new_addr, &addrlen);
+                ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
+                // Authentikasi                
                 if (new_fd >= 0) {
                     setup_epoll_connection(epfd, new_fd, &epoll_temp);
                     printf("Accepted a new connection with  fd: %d\n", new_fd);
-                    ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
                     
-                    // Authentikasi
+
 
                     // Dump atau noDump
 
@@ -302,16 +351,30 @@ int main () {
                 if ( (temp_fd = all_connections[i].data.fd) < 0) continue;
 
                 ret_val = recv(all_connections[i].data.fd, buf, DATA_BUFFER, 0);
-
+                
                 if (ret_val > 0) {
                     printf("Returned fd is %d [index, i: %d]\n", all_connections[i].data.fd, i);
                     printf("Received data (len %d bytes, fd: %d): %s\n", ret_val, all_connections[i].data.fd, buf);
                     ret_val = send(all_connections[i].data.fd, SUCCESS_MESSAGE, sizeof(SUCCESS_MESSAGE), 0);
+
+                    // if(is_auth==0&&!strstr(buf,"")){
+                    //     is_auth = auth(buf);
+                    //     if(is_auth==0){
+                    //         ret_val = send(all_connections[i].data.fd, FAIL_AUTH_MESSAGE, sizeof(FAIL_AUTH_MESSAGE), 0);
+                    //         close(all_connections[i].data.fd);
+                    //     }
+                    // }
+                    if(sudo_sock==all_connections[i].data.fd && strstr(buf,"exit")){
+                        close(sudo_sock);
+                        is_auth = 0;
+                    }
                     if(strstr(buf,"exit")){
                         close(all_connections[i].data.fd);
+                        is_auth = 0;
                     }
                 }
             }
+
         }
     } /* while(1) */
 

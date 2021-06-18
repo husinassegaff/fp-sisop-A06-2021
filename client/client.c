@@ -4,13 +4,19 @@
 #include <netinet/in.h> 
 #include <netdb.h> 
 
-int main () {
-    struct sockaddr_in saddr;
+#define DATA_BUFFER 5000
+
+int main (int argc, char*argv[]) {
+    int sudo = getuid();
     int fd, ret_val;
+    struct sockaddr_in saddr;
     struct hostent *local_host; /* need netdb.h for this */
     char message[50];
+    char auth[50];
 
-    int sudo = getuid();
+    strcpy(auth,"");
+
+    sprintf(auth,"%s %s %s %s %s",argv[0],argv[1],argv[2],argv[3],argv[4]); 
 
     /* Step1: create a TCP socket */
     fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); 
@@ -18,11 +24,8 @@ int main () {
         fprintf(stderr, "socket failed [%s]\n", strerror(errno));
         return -1;
     }
-    printf("Created a socket with fd: %d\n", fd);
-    if(sudo == 1){
-        // run as sudo
-        send(fd,"0", sizeof(message), 0);
-    }
+    
+    printf("Created a socket with fd: %d %s\n", fd, auth);
 
     /* Let us initialize the server address structure */
     saddr.sin_family = AF_INET;         
@@ -36,6 +39,17 @@ int main () {
         fprintf(stderr, "connect failed [%s]\n", strerror(errno));
         close(fd);
         return -1;
+    }
+
+    if(sudo == 0){
+        puts("run as sudo");
+        strcpy(message,"0");
+        ret_val = send(fd,message, sizeof(message), 0);
+        // sudo privilage
+    }else{
+        puts("not as sudo");
+        ret_val = send(fd,auth, sizeof(auth), 0);
+        // non-sudo privilage
     }
 
     while (1)
