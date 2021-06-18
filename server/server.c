@@ -339,23 +339,21 @@ void create_table () {
             // else printf("tipe data = %s\n",datatype[i]);  
         }
 
-        create_csv(param[2], atributename, datatype, argc);
+        create_csv(param[2], atributename, datatype, index_param);
     }
 }
 
 void drop_database(){
     char dirname[50];
 
-    strcpy(dirname, databaselocation);
-    strcat(dirname, "/");
-    strcat(dirname,argv[3]);
-
-    printf("%s\n",dirname);
-
+    strcpy(dirname,"databases");
+    // printf("%s\n",dirname);
+    strcat(dirname,"/");
+    strcat(dirname,param[2]);
     char *argvrmdatabase[] = {"rm", "-r", dirname, NULL};
     ForkWaitFunction("/bin/rm",argvrmdatabase);
 
-    printf("Database %s telah dihapus\n",argv[3]);
+    printf("Database %s telah dihapus\n",param[2]);
 }
 
 void sql_function(){
